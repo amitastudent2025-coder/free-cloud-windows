@@ -1,0 +1,324 @@
+name: Windows PIM Automation Workstation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+
+      # ============================================================
+      # 1. ENABLE RDP
+      # ============================================================
+
+      - name: 1. Enable Remote Desktop & Firewall
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Enable-NetFirewallRule `
+            -DisplayGroup "Remote Desktop"
+
+
+      # ============================================================
+      # 2. CREATE RDP USER
+      # ============================================================
+
+      - name: 2. Create Admin Account
+        shell: powershell
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          $Password = ConvertTo-SecureString `
+            $Env:RDP_PASSWORD `
+            -AsPlainText `
+            -Force
+
+          $User = Get-LocalUser `
+            -Name "CynetAdmin" `
+            -ErrorAction SilentlyContinue
+
+          if ($null -eq $User) {
+
+              New-LocalUser `
+                -Name "CynetAdmin" `
+                -Password $Password `
+                -PasswordNeverExpires
+
+          }
+          else {
+
+              Set-LocalUser `
+                -Name "CynetAdmin" `
+                -Password $Password
+          }
+
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member "CynetAdmin" `
+            -ErrorAction SilentlyContinue
+
+
+      # ============================================================
+      # 3. TAILSCALE
+      # ============================================================
+
+      - name: 3. Install & Connect Tailscale
+        shell: powershell
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+
+          Invoke-WebRequest `
+            "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
+            -OutFile "C:\tailscale.msi"
+
+          Start-Process `
+            msiexec `
+            -ArgumentList "/i C:\tailscale.msi /quiet /norestart" `
+            -Wait
+
+          Start-Sleep -Seconds 5
+
+          & "C:\Program Files\Tailscale\tailscale.exe" `
+            up `
+            --authkey="$Env:TAILSCALE_AUTHKEY" `
+            --hostname="github-pim-workstation"
+
+          Start-Sleep -Seconds 8
+
+          $ts_ip = & `
+            "C:\Program Files\Tailscale\tailscale.exe" `
+            ip -4
+
+          Write-Host ""
+          Write-Host "============================================"
+          Write-Host " PIM AUTOMATION WORKSTATION READY"
+          Write-Host " Tailscale IP : $ts_ip"
+          Write-Host " Username     : CynetAdmin"
+          Write-Host "============================================"
+
+
+      # ============================================================
+      # 4. PYTHON
+      # ============================================================
+
+      - name: 4. Setup Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+
+      # ============================================================
+      # 5. PYTHON ENVIRONMENT
+      # ============================================================
+
+      - name: 5. Create Python Environment
+        shell: powershell
+        run: |
+
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path C:\PIM
+
+          Set-Location C:\PIM
+
+          python -m venv .venv
+
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+
+
+      # ============================================================
+      # 6. PIM / DATA PROCESSING PACKAGES
+      # ============================================================
+
+      - name: 6. Install PIM Python Stack
+        shell: powershell
+        run: |
+
+          C:\PIM\.venv\Scripts\python.exe -m pip install `
+            fastapi `
+            uvicorn[standard] `
+            pydantic `
+            pydantic-settings `
+            httpx `
+            pandas `
+            openpyxl `
+            xlsxwriter `
+            pymupdf `
+            pdfplumber `
+            rapidfuzz `
+            python-dotenv `
+            requests `
+            beautifulsoup4 `
+            lxml
+
+
+      # ============================================================
+      # 7. LLM SDKs
+      # ============================================================
+
+      - name: 7. Install LLM SDKs
+        shell: powershell
+        run: |
+
+          C:\PIM\.venv\Scripts\python.exe -m pip install `
+            openai `
+            anthropic `
+            google-genai
+
+
+      # ============================================================
+      # 8. PLAYWRIGHT
+      # ============================================================
+
+      - name: 8. Install Playwright
+        shell: powershell
+        run: |
+
+          C:\PIM\.venv\Scripts\python.exe -m pip install playwright
+
+          C:\PIM\.venv\Scripts\python.exe -m playwright install chromium
+
+
+      # ============================================================
+      # 9. NODE / FRONTEND
+      # ============================================================
+
+      - name: 9. Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+
+      # ============================================================
+      # 10. PNPM
+      # ============================================================
+
+      - name: 10. Install pnpm
+        shell: powershell
+        run: |
+
+          npm install --global pnpm
+
+
+      # ============================================================
+      # 11. TYPESCRIPT / NEXT.JS
+      # ============================================================
+
+      - name: 11. Install Frontend Tools
+        shell: powershell
+        run: |
+
+          npm install --global `
+            typescript `
+            next
+
+
+      # ============================================================
+      # 12. N8N
+      # ============================================================
+
+      - name: 12. Install n8n
+        shell: powershell
+        run: |
+
+          npm install --global n8n
+
+
+      # ============================================================
+      # 13. SUPABASE CLI
+      # ============================================================
+
+      - name: 13. Install Supabase CLI
+        shell: powershell
+        run: |
+
+          npm install --global supabase
+
+
+      # ============================================================
+      # 14. GITHUB CLI
+      # ============================================================
+
+      - name: 14. Verify Development Tools
+        shell: powershell
+        run: |
+
+          Write-Host "========== TOOLCHAIN =========="
+
+          python --version
+          node --version
+          npm --version
+          pnpm --version
+          git --version
+          gh --version
+          jq --version
+
+          Write-Host ""
+          Write-Host "========== PYTHON =========="
+
+          C:\PIM\.venv\Scripts\python.exe --version
+
+          Write-Host ""
+          Write-Host "========== PIM PACKAGES =========="
+
+          C:\PIM\.venv\Scripts\python.exe -m pip list
+
+
+      # ============================================================
+      # 15. CREATE PROJECT STRUCTURE
+      # ============================================================
+
+      - name: 15. Create PIM Workspace
+        shell: powershell
+        run: |
+
+          $folders = @(
+            "C:\PIM\data",
+            "C:\PIM\data\pdf",
+            "C:\PIM\data\excel",
+            "C:\PIM\data\csv",
+            "C:\PIM\data\raw",
+            "C:\PIM\data\processed",
+            "C:\PIM\backend",
+            "C:\PIM\frontend",
+            "C:\PIM\scripts",
+            "C:\PIM\exports",
+            "C:\PIM\logs",
+            "C:\PIM\rag"
+          )
+
+          foreach ($folder in $folders) {
+
+            New-Item `
+              -ItemType Directory `
+              -Force `
+              -Path $folder
+          }
+
+
+      # ============================================================
+      # 16. KEEP ALIVE
+      # ============================================================
+
+      - name: 16. Keep Server Alive
+        shell: powershell
+        run: |
+
+          for ($i = 1; $i -le 360; $i++) {
+
+            Start-Sleep -Seconds 60
+
+            Write-Host "[$i/360] PIM workstation running..."
+          }
