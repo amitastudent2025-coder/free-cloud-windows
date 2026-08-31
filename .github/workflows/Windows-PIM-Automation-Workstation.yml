@@ -68,11 +68,45 @@ jobs:
             -ErrorAction SilentlyContinue
 
 
-      # ============================================================
-      # 3. TAILSCALE
+            # ============================================================
+      # 3. CONFIGURE ENGLISH + PERSIAN KEYBOARDS
       # ============================================================
 
-      - name: 3. Install & Connect Tailscale
+      - name: 3. Configure English + Persian Keyboard
+        shell: powershell
+        run: |
+
+          $TaskName = "Configure-Persian-Keyboard"
+
+          $Action = New-ScheduledTaskAction `
+            -Execute "powershell.exe" `
+            -Argument '-NoProfile -ExecutionPolicy Bypass -Command "$List = New-WinUserLanguageList en-US; $List.Add(''fa-IR''); Set-WinUserLanguageList -LanguageList $List -Force"'
+
+          $Trigger = New-ScheduledTaskTrigger `
+            -AtLogOn `
+            -User "saeedzaman"
+
+          $Principal = New-ScheduledTaskPrincipal `
+            -UserId "saeedzaman" `
+            -LogonType Interactive `
+            -RunLevel Limited
+
+          Register-ScheduledTask `
+            -TaskName $TaskName `
+            -Action $Action `
+            -Trigger $Trigger `
+            -Principal $Principal `
+            -Force
+
+          Write-Host "English + Persian keyboard configuration scheduled."
+
+
+      
+      # ============================================================
+      # 4. TAILSCALE
+      # ============================================================
+
+      - name: 4. Install & Connect Tailscale
         shell: powershell
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
@@ -109,20 +143,20 @@ jobs:
 
 
       # ============================================================
-      # 4. SETUP PYTHON
+      # 5. SETUP PYTHON
       # ============================================================
 
-      - name: 4. Setup Python 3.13
+      - name: 5. Setup Python 3.13
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
 
       # ============================================================
-      # 5. CREATE PIM PYTHON ENVIRONMENT
+      # 6. CREATE PIM PYTHON ENVIRONMENT
       # ============================================================
 
-      - name: 5. Create Python Environment
+      - name: 6. Create Python Environment
         shell: powershell
         run: |
 
@@ -140,10 +174,10 @@ jobs:
 
 
       # ============================================================
-      # 6. INSTALL PIM PYTHON STACK
+      # 7. INSTALL PIM PYTHON STACK
       # ============================================================
 
-      - name: 6. Install PIM Python Stack
+      - name: 7. Install PIM Python Stack
         shell: powershell
         run: |
 
@@ -167,10 +201,10 @@ jobs:
 
 
       # ============================================================
-      # 7. INSTALL LLM SDKs
+      # 8. INSTALL LLM SDKs
       # ============================================================
 
-      - name: 7. Install LLM SDKs
+      - name: 8. Install LLM SDKs
         shell: powershell
         run: |
 
